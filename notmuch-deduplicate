@@ -1,0 +1,57 @@
+#!/bin/bash
+
+query="$@"
+export pedantic="no"
+
+function compute_hash {
+    if [ "no" == "${pedantic}" ]
+    then
+        echo "ok"
+        return
+    fi
+
+    hash=$(mdedup hash "$1" \
+                  2> >(grep '^Hash:' | awk '{print $2}'))
+    if [ $? -ne 0 ]
+    then
+        echo -n "NA"
+    else
+        echo -n "${hash}"
+    fi
+}
+export -f compute_hash
+
+function job {
+    echo "${fn}"
+    IFS=$'\t' read -r -a myArray < <(echo "$1")
+    fn="${myArray[0]}"
+    fn_hash=$(compute_hash "${fn}")
+
+    if [ "${fn_hash}" == "NA" ]
+    then
+        return
+    fi
+
+    for duplicate in "${myArray[@]:1}"
+    do
+        duplicate_hash=$(compute_hash "${duplicate}")
+        if [ "${fn_hash}" == "${duplicate_hash}" ]
+        then
+            rm -rf "${duplicate}"
+            ln "${fn}" "${duplicate}"
+        fi
+    done
+}
+export -f job
+
+parallel -j4 job {} ::: < \
+         <(notmuch show \
+                   --format=json \
+                   --entire-thread=false \
+                   --body=false \
+                   "${query}" | \
+               jq -n \
+                  --stream \
+                  'fromstream(1 | truncate_stream(inputs))' | \
+               jq -r '.. | .filename? //empty | @tsv') | \
+    pv -l -s $(notmuch count "${query}") > /dev/null
