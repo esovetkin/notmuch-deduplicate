@@ -15,14 +15,14 @@ function job {
 }
 export -f job
 
-parallel -j4 job {} ::: < \
-         <(notmuch show \
-                   --format=json \
-                   --entire-thread=false \
-                   --body=false \
-                   "${query}" | \
-               jq -n \
-                  --stream \
-                  'fromstream(1 | truncate_stream(inputs))' | \
-               jq -r '.. | .filename? //empty | @tsv') | \
+notmuch show \
+        --format=json \
+        --entire-thread=false \
+        --body=false \
+        "${query}" | \
+    jq -n \
+       --stream \
+       'fromstream(1 | truncate_stream(inputs))' | \
+    jq -r '.. | .filename? //empty | @tsv' | \
+    parallel -j4 job | \
     pv -l -s $(notmuch count "${query}") > /dev/null
